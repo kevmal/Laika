@@ -11,96 +11,112 @@ open Newtonsoft.Json.Linq
 
 module Internal = 
     module JupyterApi = 
-        type KernelSpecResources() =
-            /// path for kernel.js file
-            [<JsonProperty("kernel.js")>]
-            member val KernelJs : string = "" with get,set
-            /// path for kernel.css file
-            [<JsonProperty("kernel.css")>]
-            member val KernelCss : string = "" with get,set
-            /// path for logo file.  Logo filenames are of the form `logo-widthxheight`
-            [<JsonProperty("logo-*")>]
-            member val Logo : string = "" with get,set
-        type KernelSpecFileHelpLinksItem() = 
-            /// menu item link text
-            [<JsonProperty("text")>]
-            member val Text : string = "" with get,set
-            /// menu item link url
-            [<JsonProperty("url")>]
-            member val Url : string = "" with get,set
-        type KernelSpecFile() =
-            /// The programming language which this kernel runs. This will be stored in notebook metadata.
-            [<JsonProperty("language")>]
-            member val Language : string = "" with get,set
-            /// A list of command line arguments used to start the kernel.
-            /// The text `{connection_file}` in any argument will be replaced with the path to the connection file.
-            [<JsonProperty("argv")>]
-            member val Argv : string[] = Array.empty with get,set
-            /// The kernel's name as it should be displayed in the UI. Unlike the kernel name used in the API, this can contain arbitrary unicode characters.
-            [<JsonProperty("display_name")>]
-            member val DisplayName : string = "" with get,set
-            /// Codemirror mode.  Can be a string *or* an valid Codemirror mode object.  This defaults to the string from the `language` property.
-            [<JsonProperty("codemirror_mode")>]
-            member val CodemirrorMode : string = ""  with get,set
-            /// A dictionary of environment variables to set for the kernel. These will be added to the current environment variables.
-            [<JsonProperty("env")>]
-            member val Env : IDictionary<string, string> = Dictionary<_,_>() :> _ with get,set
-            /// Help items to be displayed in the help menu in the notebook UI.
-            [<JsonProperty("help_links")>]
-            member val HelpLinks : KernelSpecFileHelpLinksItem [] = Array.empty with get,set
-        type KernelSpec() =
-            /// Unique name for kernel
-            [<JsonProperty("name")>]
-            member val Name : string = "" with get,set
-            /// Kernel spec json file
-            [<JsonProperty("KernelSpecFile")>]
-            member val KernelSpecFile : KernelSpecFile = KernelSpecFile() with get,set
-            [<JsonProperty("resources")>]
-            member val Resources : KernelSpecResources = KernelSpecResources() with get,set
-        type KernelspecsResponse() = 
-            /// The name of the default kernel.
-            [<JsonProperty("default")>]
-            member val Default : string = "" with get,set
-            [<JsonProperty("kernelspecs")>]
-            member val Kernelspecs : IDictionary<string, KernelSpec> = Dictionary<_,_>() :> _ with get,set
-        type Kernel() = 
-            /// uuid of kernel
-            [<JsonProperty("id")>]
-            member val Id : string = "" with get,set
-            [<JsonProperty("name")>]
-            member val Name : string = "" with get,set
-            /// ISO 8601 timestamp for the last-seen activity on this kernel.
-            /// Use this in combination with execution_state == 'idle' to identify
-            /// which kernels have been idle since a given time.
-            /// Timestamps will be UTC, indicated 'Z' suffix.
-            /// Added in notebook server 5.0.
-            [<JsonProperty("last_activity")>]
-            member val LastActivity : string = "" with get,set
-            /// The number of active connections to this kernel.
-            [<JsonProperty("connections")>]
-            member val Connections : int = 0 with get,set
-            /// Current execution state of the kernel (typically 'idle' or 'busy', but may be other values, such as 'starting').
-            /// Added in notebook server 5.0.
-            [<JsonProperty("execution_state")>]
-            member val ExecutionState : string = "" with get,set
+        type KernelSpecResources =
+            {
+                /// path for kernel.js file
+                [<JsonProperty("kernel.js")>]
+                KernelJs : string
+                /// path for kernel.css file
+                [<JsonProperty("kernel.css")>]
+                KernelCss : string
+                /// path for logo file.  Logo filenames are of the form `logo-widthxheight`
+                [<JsonProperty("logo-*")>]
+                Logo : string 
+            }
+        type KernelSpecFileHelpLinksItem =
+            {
+                /// menu item link text
+                [<JsonProperty("text")>]
+                Text : string
+                /// menu item link url
+                [<JsonProperty("url")>]
+                Url : string
+            }
+        type KernelSpecFile =
+            {
+                /// The programming language which this kernel runs. This will be stored in notebook metadata.
+                [<JsonProperty("language")>]
+                Language : string
+                /// A list of command line arguments used to start the kernel.
+                /// The text `{connection_file}` in any argument will be replaced with the path to the connection file.
+                [<JsonProperty("argv")>]
+                Argv : string[]
+                /// The kernel's name as it should be displayed in the UI. Unlike the kernel name used in the API, this can contain arbitrary unicode characters.
+                [<JsonProperty("display_name")>]
+                DisplayName : string
+                /// Codemirror mode.  Can be a string *or* an valid Codemirror mode object.  This defaults to the string from the `language` property.
+                [<JsonProperty("codemirror_mode")>]
+                CodemirrorMode : string
+                /// A dictionary of environment variables to set for the kernel. These will be added to the current environment variables.
+                [<JsonProperty("env")>]
+                Env : IDictionary<string, string>
+                /// Help items to be displayed in the help menu in the notebook UI.
+                [<JsonProperty("help_links")>]
+                HelpLinks : KernelSpecFileHelpLinksItem []
+            }
+        type KernelSpec =
+            {
+                /// Unique name for kernel
+                [<JsonProperty("name")>]
+                Name : string
+                /// Kernel spec json file
+                [<JsonProperty("KernelSpecFile")>]
+                KernelSpecFile : KernelSpecFile
+                [<JsonProperty("resources")>]
+                Resources : KernelSpecResources
+            }
+        type KernelspecsResponse = 
+            {
+                /// The name of the default kernel.
+                [<JsonProperty("default")>]
+                Default : string
+                [<JsonProperty("kernelspecs")>]
+                Kernelspecs : IDictionary<string, KernelSpec>
+            }
+        type Kernel = 
+            {
+                /// uuid of kernel
+                [<JsonProperty("id")>]
+                Id : string
+                [<JsonProperty("name")>]
+                Name : string
+                /// ISO 8601 timestamp for the last-seen activity on this kernel.
+                /// Use this in combination with execution_state == 'idle' to identify
+                /// which kernels have been idle since a given time.
+                /// Timestamps will be UTC, indicated 'Z' suffix.
+                /// Added in notebook server 5.0.
+                [<JsonProperty("last_activity")>]
+                LastActivity : string
+                /// The number of active connections to this kernel.
+                [<JsonProperty("connections")>]
+                Connections : int
+                /// Current execution state of the kernel (typically 'idle' or 'busy', but may be other values, such as 'starting').
+                /// Added in notebook server 5.0.
+                [<JsonProperty("execution_state")>]
+                ExecutionState : string
+            }
             override x.ToString() = 
                 sprintf "%s_%s_%s" x.Name x.Id x.LastActivity
 
         type KernelName() =
             [<JsonProperty("name")>]
             member val Name : string = "" with get,set
-        type Session() =
-            [<JsonProperty("id")>]
-            member val Id = "" with get,set
-            [<JsonProperty("path")>]
-            member val Path = "" with get,set
-            [<JsonProperty("name")>]
-            member val Name = "" with get,set
-            [<JsonProperty("type")>]
-            member val Type = "" with get,set
-            [<JsonProperty("kernel")>]
-            member val Kernel = Kernel() with get,set
-            
+        type Session = 
+            {
+                [<JsonProperty("id")>]
+                Id : string
+                [<JsonProperty("path")>]
+                /// path to the session
+                Path : string
+                [<JsonProperty("name")>]
+                /// name of the session
+                Name : string
+                [<JsonProperty("type")>]
+                /// session type
+                Type : string
+                [<JsonProperty("kernel")>]
+                Kernel : Kernel
+            }                
 
 module Jupyter = 
     open Internal.JupyterApi
