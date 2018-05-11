@@ -116,7 +116,15 @@ module Internal =
                 Type : string
                 [<JsonProperty("kernel")>]
                 Kernel : Kernel
-            }                
+            }   
+        /// An error response from the server
+        type Error = 
+            {
+                /// The reason for the failure
+                Reason : string
+                /// The message logged when the error occurred
+                Message : string
+            }
 
 module Jupyter = 
     open Internal.JupyterApi
@@ -467,6 +475,7 @@ module Jupyter =
             Value : string
         }
 
+    // TODO: clean this up
     msgTypes.["execute_request"] <- typeof<ExecuteRequestContent>
     msgTypes.["execute_reply"] <- typeof<ExecuteReply>
     msgTypes.["execute_result"] <- typeof<ExecuteResult>
@@ -514,14 +523,6 @@ module Jupyter =
             Inbox : MailboxProcessor<WsMessage>
         }
         
-    type Session = 
-        {
-            Connection : KernelConnection
-            SessionId : Guid
-        }
-        member x.Bind(v,f) = 
-            f 
-
     let (|ExecuteReply|_|) (x : Message) = 
         match x with
         | ({Content = :? ExecuteReply as x}) -> Some x
@@ -593,7 +594,7 @@ module Jupyter =
         printfn "%s" str
         JsonConvert.DeserializeObject<'a> str
 
-    let putJson name parameters o server : 'a = 
+    let postJson name parameters o server : 'a = 
         let payload = Newtonsoft.Json.JsonConvert.SerializeObject o
         use client = new HttpClient()
         use content = new StringContent(payload)
@@ -612,21 +613,41 @@ module Jupyter =
     let getJsonObj name parameters server = 
         Newtonsoft.Json.Linq.JObject.Parse(getJsonString name parameters server)
     
+    let patch name parameters o server : 'a = 
+        let payload = Newtonsoft.Json.JsonConvert.SerializeObject o
+        use client = new HttpClient()
+        use content = new StringContent(payload)
+        content.Headers.ContentType <- MediaTypeHeaderValue("application/json")
+        let url = loc name parameters server
+        use request = new HttpRequestMessage(HttpMethod "PATCH", url)
+        request.Content <- content
+        let response = client.SendAsync(request).Result
+        let textResponse = response.Content.ReadAsStringAsync().Result
+        JsonConvert.DeserializeObject<'a>(textResponse)
+        
+
+    /// Get kernel specs
     let kernelSpecs (server : Server) : KernelspecsResponse = getJson "/api/kernelspecs" [] server
+
+    /// Start a kernel and return the uuid
     let kernel name (server : Server) : Kernel = 
         let o = KernelName(Name = name)
-        putJson "/api/kernels" [] o server 
+        postJson "/api/kernels" [] o server 
+
+    /// Get kernel information
     let kernelInfo kernelId (server : Server) : Kernel = 
         getJson (sprintf "/api/kernels/%s" kernelId) [] server 
    
+    /// Kill a kernel and delete the kernel id
     let kernelDelete kernelId (server : Server) = 
         delete (sprintf "/api/kernels/%s" kernelId) [] server
         
-
-    let listKernels (server : Server) : Kernel list = 
+    /// List all currently running kernels
+    let kernelList (server : Server) : Kernel list = 
         getJson "/api/kernels" [] server 
 
-    let websocketClient kernelId server = 
+    /// Upgrades the connection to a websocket connection.
+    let kernelChannel kernelId server = 
         let u = UriBuilder(loc (sprintf "/api/kernels/%s/channels" kernelId) [] server)
         u.Scheme <- "ws"
         async {
@@ -636,6 +657,26 @@ module Jupyter =
             return w
         }
         
+    /// List of current sessions
+    let sessionList server : Session list = 
+        getJson "/api/sessions" [] server
+        
+    /// Create a new session, or return an existing session if a session of the same name already exists.
+    let session (session : Session) server : Session = 
+        postJson "/api/sessions" [] session server
+
+    /// Get session from id
+    let sessionGet sessionId server : Session = 
+        getJson (sprintf "/api/sessions/%s" sessionId) [] server
+
+    // Rename session
+    let sessionRename (newNameSession : Session) sessionId server : Session = 
+        patch (sprintf "/api/sessions/%s" sessionId) [] newNameSession server
+
+    // Delete session from id
+    let sessionDelete sessionId server = 
+        delete (sprintf "/api/sessions/%s" sessionId) [] server 
+
     type IncomingMessages(agent : MailboxProcessor<ConnectionMessage> ) = 
         interface IObservable<Message> with
             member x.Subscribe(observer : IObserver<_>) = 
@@ -756,7 +797,7 @@ module Jupyter =
             IncomingMessages(inbox)
         
     let kernelClient kernelId server = 
-        let wc = websocketClient kernelId server |> Async.RunSynchronously
+        let wc = kernelChannel kernelId server |> Async.RunSynchronously
         let reader,incoming = reader (16*1024) wc
         {
             KernelId = kernelId

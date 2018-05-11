@@ -70,7 +70,7 @@ module Helper =
         else
             None
   
-module Basic =
+module Kernel =
     let kernelName = "python3"
     [<Fact>]
     let ``start a kernel``() = 
@@ -83,7 +83,7 @@ module Basic =
     let ``list kernels empty``() = 
         withJupyter
             (fun server ->
-                let kss = Jupyter.listKernels server
+                let kss = Jupyter.kernelList server
                 Assert.Empty kss
             )
     [<Fact>]
@@ -92,7 +92,7 @@ module Basic =
             (fun server ->
                 let k = Jupyter.kernel kernelName server
                 Assert.Equal(kernelName, k.Name)
-                let kernels = Jupyter.listKernels server
+                let kernels = Jupyter.kernelList server
                 Assert.NotEmpty(kernels)
                 Assert.True(kernels |> Seq.exists (fun i -> i.Name = kernelName), "Kernel started but not in kernel list")
             )
@@ -121,3 +121,119 @@ module Basic =
 
 
 
+module Session = 
+    open Laika.Internal.JupyterApi
+    [<Fact>]
+    let ``empty session list``() = 
+        withJupyter
+            (fun s -> 
+                s
+                |> Jupyter.sessionList 
+                |> Assert.Empty)
+            
+    [<Fact>]
+    let ``start session``() = 
+        withKernel Kernel.kernelName
+            (fun s k -> 
+                let session = 
+                    {
+                        Id = ""
+                        Path = "Untitled.ipynb"
+                        Name = ""
+                        Type = "notebook"
+                        Kernel = k
+                    }
+                
+                let s2 = Jupyter.session session s
+                Assert.True((k.Id = s2.Kernel.Id)))
+            
+    [<Fact>]
+    let ``non-empty session list``() = 
+        withKernel Kernel.kernelName
+            (fun s k -> 
+                let session = 
+                    {
+                        Id = ""
+                        Path = "Untitled.ipynb"
+                        Name = ""
+                        Type = "notebook"
+                        Kernel = k
+                    }
+                
+                let s2 = Jupyter.session session s
+                let l = Jupyter.sessionList s
+                Assert.True((l.Length = 1))
+                Assert.True((l.[0] = s2)))
+            
+            
+            
+    [<Fact>]
+    let ``existing session``() = 
+        withKernel Kernel.kernelName
+            (fun s k -> 
+                let session = 
+                    {
+                        Id = ""
+                        Path = "Untitled.ipynb"
+                        Name = "MySession"
+                        Type = "notebook"
+                        Kernel = k
+                    }
+                let s2 = Jupyter.session session s
+                let s3 = Jupyter.session session s 
+                Assert.True((s2.Id = s3.Id)))
+            
+    [<Fact>]
+    let ``session from id``() = 
+        withKernel Kernel.kernelName
+            (fun s k -> 
+                let session = 
+                    {
+                        Id = ""
+                        Path = "Untitled.ipynb"
+                        Name = "MySession"
+                        Type = "notebook"
+                        Kernel = k
+                    }
+                let s2 = Jupyter.session session s
+                let s3 = Jupyter.sessionGet s2.Id s 
+                Assert.True((s2.Name = s3.Name)))
+            
+    [<Fact>]
+    let ``rename session``() = 
+        withKernel Kernel.kernelName
+            (fun s k -> 
+                let session = 
+                    {
+                        Id = ""
+                        Path = "Untitled.ipynb"
+                        Name = "MySession"
+                        Type = "notebook"
+                        Kernel = k
+                    }
+                let s2 = Jupyter.session session s
+                let s3 = Jupyter.sessionRename {s2 with Name = "newName"} s2.Id s
+                Assert.Equal("newName", s3.Name)
+                let l = Jupyter.sessionList s 
+                Assert.Equal("newName", l.[0].Name))
+            
+    [<Fact>]
+    let ``delete session``() = 
+        withKernel Kernel.kernelName
+            (fun s k -> 
+                let session = 
+                    {
+                        Id = ""
+                        Path = "Untitled.ipynb"
+                        Name = "MySession"
+                        Type = "notebook"
+                        Kernel = k
+                    }
+                let s2 = Jupyter.session session s
+                let l = Jupyter.sessionList s 
+                Assert.Equal("MySession", l.[0].Name)
+                let resp = Jupyter.sessionDelete s2.Id s
+                Assert.Equal(enum 204, resp.StatusCode)
+                let l2 = Jupyter.sessionList s 
+                Assert.Empty(l2))
+            
