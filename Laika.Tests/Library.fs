@@ -119,6 +119,14 @@ module Kernel =
 
             )
 
+    [<Fact>]
+    let ``kernel specs``() = 
+        withJupyter 
+            (fun server ->
+                let specs = Jupyter.kernelSpecs server
+                Assert.NotEmpty(specs.Kernelspecs)
+                Assert.True(specs.Kernelspecs.[specs.Default].Name = specs.Default)
+            )
 
 
 module Session = 

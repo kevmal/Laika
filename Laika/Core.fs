@@ -126,6 +126,72 @@ module Internal =
                 Message : string
             }
 
+        type OptionalString() = 
+            inherit JsonConverter()
+            override x.CanRead = true
+            override x.ReadJson(reader : JsonReader,t,v,s) = 
+                if reader.TokenType = JsonToken.Null then
+                    box ""
+                else 
+                    box (s.Deserialize<'t>(reader))
+            override x.CanWrite = false
+            override x.WriteJson(w,v,s) = failwith "cant write"
+            override x.CanConvert(t) = t = typeof<string>
+
+        type FileOrDirContents = 
+            | ContentNotRequested
+            | FileContent of string
+            | DirContent of Contents []
+
+        and FileOrDirContentsConverter() = 
+            inherit JsonConverter()
+            override x.CanRead = true
+            override x.ReadJson(reader : JsonReader,t,v,s) = 
+                printfn "%A" reader.TokenType
+                if reader.TokenType = JsonToken.Null then
+                    box ContentNotRequested 
+                elif reader.TokenType = JsonToken.StartArray then
+                    s.Deserialize<Contents []>(reader) |> DirContent |> box
+                else
+                    s.Deserialize<string>(reader) |> FileContent |> box
+            override x.CanWrite = false
+            override x.WriteJson(w,v,s) = failwith "cant write"
+            override x.CanConvert(t) = t = typeof<FileOrDirContents>
+            
+
+        and Contents = 
+            {
+                [<JsonProperty("name")>]
+                /// Name of file or directory, equivalent to the last part of the path
+                Name : string
+                /// Full path for file or directory
+                [<JsonProperty("path")>]
+                Path : string
+                /// Type of content. directory, file, notebook
+                [<JsonProperty("type")>]
+                Type : string
+                /// indicates whether the requester has permission to edit the file
+                [<JsonProperty("writable")>]
+                Writable : bool
+                /// Creation timestamp
+                [<JsonProperty("created")>]
+                Created : string
+                /// Last modified timestamp
+                [<JsonProperty("last_modified")>]
+                LastModified : string
+                /// The mimetype of a file. If content is not null, and type is 'file’, this will contain the 
+                /// mimetype of the file, otherwise this will be null.
+                [<JsonProperty("mimetype"); JsonConverter(typeof<OptionalString>)>]
+                Mimetype : string
+                /// The content, if requested (otherwise null). Will be an array if type is ‘directory’
+                [<JsonProperty("content"); JsonConverter(typeof<FileOrDirContentsConverter>)>]
+                Content : FileOrDirContents
+                /// Format of content (one of '', 'text’, 'base64’, ‘json’)
+                [<JsonProperty("format"); JsonConverter(typeof<OptionalString>)>]
+                Format : string
+            }
+
+
 module Jupyter = 
     open Internal.JupyterApi
     open System.Web
