@@ -11,11 +11,13 @@ open Xunit
 module Helper = 
     open System.Threading
 
-    let jupyterLocation = @"C:\Users\User1\Anaconda2\envs\tensorflow\Scripts\jupyter.exe"
-    let jupyterUrl = ""
+    let jupyterLocation = @"E:\install\Anaconda3\Scripts\jupyter.exe"
+    let jupyterUrl = "http://localhost:8888"
 
-
-    let startJupyter() =
+    let startJupyter2() =
+            let path = Environment.GetEnvironmentVariable "PATH"
+            let jdir = IO.Path.GetDirectoryName(jupyterLocation)
+            Environment.SetEnvironmentVariable("PATH", jdir + string IO.Path.PathSeparator + path)
             let pinfo = ProcessStartInfo()
             pinfo.FileName <- jupyterLocation
             pinfo.Arguments <- "notebook --no-browser"
@@ -47,15 +49,33 @@ module Helper =
                 Username = None
                 Password = None
             }
+
+
+    let kill2 (p : Process) = //This is unfortunate
+        let pinfo = ProcessStartInfo("taskkill")
+        pinfo.Arguments <- sprintf "/PID %d /F /T " p.Id
+        pinfo.UseShellExecute <- false
+        Process.Start(pinfo)
+    
+    let startJupyter() =
+        (),{
+            Url = Uri(jupyterUrl)
+            Token = Some "8d382eb1f14ac525235d5ea1e504d3b8f427910e90a20bd8"
+            Username = None
+            Password = None
+        }
+
+    let kill () = ()
+
     let withJupyter f = 
         let p,s = startJupyter() 
         f s
-        p.Kill()
+        kill p
     let withKernel name f = 
         let p,s = startJupyter() 
         let k = Jupyter.kernel name s
         f s k
-        p.Kill()
+        kill p
     let first (o : IObservable<'a>) = 
         let mutable v = Unchecked.defaultof<'a>
         use e = new ManualResetEventSlim()
@@ -70,7 +90,19 @@ module Helper =
         else
             None
   
+    //let checkNulls (o : 't) =
+    //    typeof<'t>.GetProperties()
+    //    |> Seq.iter
+    //        (fun x ->
+    //            let t = x.PropertyType
+    //            if not(t.ContainsGenericParameters && t.GetGenericTypeDefinition() = typedefof<_ option>) then
+    //                Assert.True(x.GetMethod.Invoke(o, Array.empty) |> isNull |> not, sprintf "%s %s should not be null" x.DeclaringType.FullName x.Name)
+    //            if t.
+    //        )
+
 module Kernel =
+    open Laika.Internal.JupyterApi
+
     let kernelName = "python3"
     [<Fact>]
     let ``start a kernel``() = 
@@ -79,7 +111,7 @@ module Kernel =
                 let k = Jupyter.kernel kernelName server//{server with Url = Uri("http://localhost:9394")}
                 Assert.Equal(kernelName, k.Name)
             )
-    [<Fact>]
+    [<Fact(Skip="Needs ability to start/stop jupyter")>]
     let ``list kernels empty``() = 
         withJupyter
             (fun server ->
@@ -127,121 +159,59 @@ module Kernel =
                 Assert.NotEmpty(specs.Kernelspecs)
                 Assert.True(specs.Kernelspecs.[specs.Default].Name = specs.Default)
             )
+    [<Fact>]
+    let ``kernel check for null fields``() = 
+        //TODO generalize null checking
+        withJupyter 
+            (fun server ->
+                let specs = Jupyter.kernelSpecs server
+                typeof<KernelspecsResponse>.GetProperties()
+                |> Seq.iter
+                    (fun x ->
+                        let t = x.PropertyType
+                        if not(t.ContainsGenericParameters && t.GetGenericTypeDefinition() = typedefof<_ option>) then
+                            Assert.True(x.GetMethod.Invoke(specs, Array.empty) |> isNull |> not, sprintf "%s %s should not be null" x.DeclaringType.FullName x.Name)
+                    )
+                let checkSpec (spec : KernelSpec) = 
+                    typeof<KernelSpec>.GetProperties()
+                    |> Seq.iter
+                        (fun x ->
+                            let t = x.PropertyType
+                            if not(t.ContainsGenericParameters && t.GetGenericTypeDefinition() = typedefof<_ option>) then
+                                Assert.True(x.GetMethod.Invoke(spec, Array.empty) |> isNull |> not, sprintf "%s %s should not be null" x.DeclaringType.FullName x.Name)
+                        )
+                    typeof<KernelSpecFile>.GetProperties()
+                    |> Seq.iter
+                        (fun x ->
+                            let t = x.PropertyType
+                            if not(t.ContainsGenericParameters && t.GetGenericTypeDefinition() = typedefof<_ option>) then
+                                Assert.True(x.GetMethod.Invoke(spec.KernelSpecFile, Array.empty) |> isNull |> not, sprintf "%s %s should not be null" x.DeclaringType.FullName x.Name)
+                        )
+                specs.Kernelspecs.Values |> Seq.iter (checkSpec)
+            )
 
 
-module Session = 
+module Content = 
     open Laika.Internal.JupyterApi
     [<Fact>]
-    let ``empty session list``() = 
+    let ``simple directory listing``() = 
         withJupyter
             (fun s -> 
-                s
-                |> Jupyter.sessionList 
-                |> Assert.Empty)
+                let contents = 
+                    s
+                    |> Jupyter.contents "directory" "text" false ""
+                Assert.Equal("directory", contents.Type))
             
-    [<Fact>]
-    let ``start session``() = 
-        withKernel Kernel.kernelName
-            (fun s k -> 
-                let session = 
-                    {
-                        Id = ""
-                        Path = "Untitled.ipynb"
-                        Name = ""
-                        Type = "notebook"
-                        Kernel = k
-                    }
-                
-                let s2 = Jupyter.session session s
-                Assert.True((k.Id = s2.Kernel.Id)))
+    [<Fact(Skip="Needs ability to start/stop jupyter")>]
+    let ``new untitled``() = 
+        withJupyter
+            (fun s -> 
+                let contents = 
+                    s
+                    |> Jupyter.contentsEmptyNotebook ""
+                Assert.True(contents.Name.StartsWith("Untitled"))
+                Assert.True(System.IO.FileInfo(contents.Name).Length > 0L)
+                IO.File.Delete(contents.Name)
+            )
             
-    [<Fact>]
-    let ``non-empty session list``() = 
-        withKernel Kernel.kernelName
-            (fun s k -> 
-                let session = 
-                    {
-                        Id = ""
-                        Path = "Untitled.ipynb"
-                        Name = ""
-                        Type = "notebook"
-                        Kernel = k
-                    }
-                
-                let s2 = Jupyter.session session s
-                let l = Jupyter.sessionList s
-                Assert.True((l.Length = 1))
-                Assert.True((l.[0] = s2)))
-            
-            
-            
-    [<Fact>]
-    let ``existing session``() = 
-        withKernel Kernel.kernelName
-            (fun s k -> 
-                let session = 
-                    {
-                        Id = ""
-                        Path = "Untitled.ipynb"
-                        Name = "MySession"
-                        Type = "notebook"
-                        Kernel = k
-                    }
-                let s2 = Jupyter.session session s
-                let s3 = Jupyter.session session s 
-                Assert.True((s2.Id = s3.Id)))
-            
-    [<Fact>]
-    let ``session from id``() = 
-        withKernel Kernel.kernelName
-            (fun s k -> 
-                let session = 
-                    {
-                        Id = ""
-                        Path = "Untitled.ipynb"
-                        Name = "MySession"
-                        Type = "notebook"
-                        Kernel = k
-                    }
-                let s2 = Jupyter.session session s
-                let s3 = Jupyter.sessionGet s2.Id s 
-                Assert.True((s2.Name = s3.Name)))
-            
-    [<Fact>]
-    let ``rename session``() = 
-        withKernel Kernel.kernelName
-            (fun s k -> 
-                let session = 
-                    {
-                        Id = ""
-                        Path = "Untitled.ipynb"
-                        Name = "MySession"
-                        Type = "notebook"
-                        Kernel = k
-                    }
-                let s2 = Jupyter.session session s
-                let s3 = Jupyter.sessionRename {s2 with Name = "newName"} s2.Id s
-                Assert.Equal("newName", s3.Name)
-                let l = Jupyter.sessionList s 
-                Assert.Equal("newName", l.[0].Name))
-            
-    [<Fact>]
-    let ``delete session``() = 
-        withKernel Kernel.kernelName
-            (fun s k -> 
-                let session = 
-                    {
-                        Id = ""
-                        Path = "Untitled.ipynb"
-                        Name = "MySession"
-                        Type = "notebook"
-                        Kernel = k
-                    }
-                let s2 = Jupyter.session session s
-                let l = Jupyter.sessionList s 
-                Assert.Equal("MySession", l.[0].Name)
-                let resp = Jupyter.sessionDelete s2.Id s
-                Assert.Equal(enum 204, resp.StatusCode)
-                let l2 = Jupyter.sessionList s 
-                Assert.Empty(l2))
-            
+

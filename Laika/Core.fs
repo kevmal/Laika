@@ -11,18 +11,42 @@ open Newtonsoft.Json.Linq
 
 module Internal = 
     module JupyterApi = 
-        type KernelSpecResources =
-            {
-                /// path for kernel.js file
-                [<JsonProperty("kernel.js")>]
-                KernelJs : string
-                /// path for kernel.css file
-                [<JsonProperty("kernel.css")>]
-                KernelCss : string
-                /// path for logo file.  Logo filenames are of the form `logo-widthxheight`
-                [<JsonProperty("logo-*")>]
-                Logo : string 
-            }
+        //type KernelSpecResources =
+        //    {
+        //        /// path for kernel.js file
+        //        [<JsonProperty("kernel.js")>]
+        //        KernelJs : string
+        //        /// path for kernel.css file
+        //        [<JsonProperty("kernel.css")>]
+        //        KernelCss : string
+        //        /// path for logo file.  Logo filenames are of the form `logo-widthxheight`
+        //        [<JsonProperty("logo-*")>]
+        //        Logo : string 
+        //    }
+        type OptionalString() = 
+            inherit JsonConverter()
+            override x.CanRead = true
+            override x.ReadJson(reader : JsonReader,t,v,s) = 
+                if reader.TokenType = JsonToken.Null then
+                    box ""
+                else 
+                    box (s.Deserialize<string>(reader))
+            override x.CanWrite = false
+            override x.WriteJson(w,v,s) = failwith "cant write"
+            override x.CanConvert(t) = t = typeof<string>
+        type OptionAsNull<'t>() = 
+            inherit JsonConverter()
+            override x.CanRead = true
+            override x.ReadJson(reader : JsonReader,t,v,s) = 
+                printfn "%A" reader.TokenType
+                if reader.TokenType = JsonToken.Null then
+                    box None
+                else 
+                    box (Some(s.Deserialize<'t>(reader)))
+            override x.CanWrite = false
+            override x.WriteJson(w,v,s) = failwith "cant write"
+            override x.CanConvert(t) = t = typeof<Option<'t>>
+                
         type KernelSpecFileHelpLinksItem =
             {
                 /// menu item link text
@@ -46,7 +70,7 @@ module Internal =
                 DisplayName : string
                 /// Codemirror mode.  Can be a string *or* an valid Codemirror mode object.  This defaults to the string from the `language` property.
                 [<JsonProperty("codemirror_mode")>]
-                CodemirrorMode : string
+                CodemirrorMode : string //TODO: Codemirror mode object?
                 /// A dictionary of environment variables to set for the kernel. These will be added to the current environment variables.
                 [<JsonProperty("env")>]
                 Env : IDictionary<string, string>
@@ -54,16 +78,33 @@ module Internal =
                 [<JsonProperty("help_links")>]
                 HelpLinks : KernelSpecFileHelpLinksItem []
             }
+        type KernelSpecFileConverter() = 
+            inherit JsonConverter()
+            override x.CanRead = true
+            override x.ReadJson(reader : JsonReader,t,v,s) =
+                let o = s.Deserialize<KernelSpecFile>(reader)
+                match o with
+                | { HelpLinks = null; CodemirrorMode = null} -> 
+                    {o with CodemirrorMode = ""; HelpLinks = [||]} |> box
+                | { HelpLinks = null} -> 
+                    {o with HelpLinks = [||]} |> box
+                | { CodemirrorMode = null} -> 
+                    {o with CodemirrorMode = ""} |> box
+                | _ -> box o
+            override x.CanWrite = false
+            override x.WriteJson(w,v,s) = failwith "cant write"
+            override x.CanConvert(t) = t = typeof<KernelSpecFile>
+
         type KernelSpec =
             {
                 /// Unique name for kernel
                 [<JsonProperty("name")>]
                 Name : string
                 /// Kernel spec json file
-                [<JsonProperty("KernelSpecFile")>]
+                [<JsonProperty("spec"); JsonConverter(typeof<KernelSpecFileConverter>)>]
                 KernelSpecFile : KernelSpecFile
                 [<JsonProperty("resources")>]
-                Resources : KernelSpecResources
+                Resources : IDictionary<string,string>
             }
         type KernelspecsResponse = 
             {
@@ -126,18 +167,6 @@ module Internal =
                 Message : string
             }
 
-        type OptionalString() = 
-            inherit JsonConverter()
-            override x.CanRead = true
-            override x.ReadJson(reader : JsonReader,t,v,s) = 
-                if reader.TokenType = JsonToken.Null then
-                    box ""
-                else 
-                    box (s.Deserialize<'t>(reader))
-            override x.CanWrite = false
-            override x.WriteJson(w,v,s) = failwith "cant write"
-            override x.CanConvert(t) = t = typeof<string>
-
         type FileOrDirContents = 
             | ContentNotRequested
             | FileContent of string
@@ -178,17 +207,143 @@ module Internal =
                 Created : string
                 /// Last modified timestamp
                 [<JsonProperty("last_modified")>]
-                LastModified : string
+                LastModified : DateTime
+                /// The content, if requested (otherwise null). Will be an array if type is ‘directory’
+                [<JsonProperty("content"); JsonConverter(typeof<FileOrDirContentsConverter>)>]
+                Content : FileOrDirContents
                 /// The mimetype of a file. If content is not null, and type is 'file’, this will contain the 
                 /// mimetype of the file, otherwise this will be null.
                 [<JsonProperty("mimetype"); JsonConverter(typeof<OptionalString>)>]
                 Mimetype : string
-                /// The content, if requested (otherwise null). Will be an array if type is ‘directory’
-                [<JsonProperty("content"); JsonConverter(typeof<FileOrDirContentsConverter>)>]
-                Content : FileOrDirContents
                 /// Format of content (one of '', 'text’, 'base64’, ‘json’)
                 [<JsonProperty("format"); JsonConverter(typeof<OptionalString>)>]
                 Format : string
+            }
+
+        type LanguageInfo = 
+            {
+                [<JsonProperty("name")>]
+                Name : string
+                [<JsonProperty("version")>]
+                Version : string
+                [<JsonProperty("codemirror_mode")>]
+                CodemirrorMode : string
+            }
+        type ICellOutput =
+            abstract member OutputType : string
+        type StreamOutput = 
+            {
+                [<JsonProperty("output_type")>]
+                OutputType : string
+                [<JsonProperty("name")>]
+                Name : string
+                [<JsonProperty("text")>]
+                Text : string
+            }
+            static member OutputTypeString = "stream"
+            interface ICellOutput with
+                member x.OutputType = x.OutputType
+            
+        type DisplayDataOutput = 
+            {
+                [<JsonProperty("output_type")>]
+                OutputType : string
+                [<JsonProperty("data")>]
+                Data : IDictionary<string,string>
+                [<JsonProperty("metadata")>]
+                Metadata : string
+            }
+            static member OutputTypeString = "display_data"
+            interface ICellOutput with
+                member x.OutputType = x.OutputType
+            
+        type ExecuteResultOutput = 
+            {
+                [<JsonProperty("output_type")>]
+                OutputType : string
+                [<JsonProperty("data")>]
+                Data : IDictionary<string,string>
+                [<JsonProperty("metadata")>]
+                Metadata : string
+                [<JsonProperty("execution_count")>]
+                ExecutionCount : int
+            }
+            static member OutputTypeString = "execute_result"
+            interface ICellOutput with
+                member x.OutputType = x.OutputType
+            
+        type ErrorOutput = 
+            {
+                [<JsonProperty("output_type")>]
+                OutputType : string
+                [<JsonProperty("ename")>]
+                ExceptionName : string
+                [<JsonProperty("evalue")>]
+                ExceptionValue : string
+                [<JsonProperty("traceback")>]
+                Traceback : string []
+            }
+            static member OutputTypeString = "error"
+            interface ICellOutput with
+                member x.OutputType = x.OutputType
+            
+
+        type CellOutputConverter() = 
+            inherit JsonConverter()
+            override x.CanRead = true
+            override x.ReadJson(reader : JsonReader,t,v,s) = 
+                let a = s.Deserialize<JArray>(reader) 
+                box [|
+                    for i in a do
+                        yield
+                            match i.["cell_type"].Value<string>() with
+                            | "error" -> i.ToObject<ErrorOutput>() :> ICellOutput
+                            | "execute_result" -> i.ToObject<ExecuteResultOutput>() :> ICellOutput
+                            | "display_data" -> i.ToObject<DisplayDataOutput>() :> ICellOutput
+                            | "stream" -> i.ToObject<StreamOutput>() :> ICellOutput
+                            | x -> failwithf "Unsurported output type %s" x
+                |]
+            override x.CanWrite = false
+            override x.WriteJson(w,v,s) = failwith "cant write"
+            override x.CanConvert(t) = t.GetInterfaces() |> Seq.contains (typeof<ICellOutput>)
+            
+
+        type Cell = 
+            {
+                [<JsonProperty("cell_type")>]
+                CellType : string
+                [<JsonProperty("metadata")>]
+                Metadata : IDictionary<string,string>
+                [<JsonProperty("source")>]
+                Source : string
+                [<JsonProperty("execution_count")>]
+                ExecutionCount : int
+                [<JsonProperty("outputs"); JsonConverter(typeof<CellOutputConverter>)>]
+                Outputs : ICellOutput []
+                [<JsonProperty("attachments")>]
+                Attachments : IDictionary<string,string> 
+            }
+        type LanguageInfoConverter() = inherit OptionAsNull<LanguageInfo>()
+        type NotebookContent = 
+            {
+                [<JsonProperty("metadata")>]
+                Metadata : IDictionary<string,string>
+                [<JsonProperty("language_info"); JsonConverter(typeof<LanguageInfoConverter>)>]
+                LanguageInfo : LanguageInfo option
+                [<JsonProperty("nbformat")>]
+                NbFormat : int
+                [<JsonProperty("nbformat_minor")>]
+                NbFormatMinor : int
+                [<JsonProperty("cells")>]
+                Cells : Cell []
+            }
+        let emptyNotebook = 
+            {
+                Metadata = Map.empty
+                LanguageInfo = None
+                NbFormat = 4
+                NbFormatMinor = 2
+                Cells = Array.empty
             }
 
 
@@ -646,6 +801,8 @@ module Jupyter =
         | Some t -> buildUrl (Uri(server.Url, name)) (("token", t) :: parameters)
         | None -> buildUrl (Uri(server.Url, name)) (parameters)
 
+    let url name parameters server = loc name parameters server 
+
     exception ExpectingJsonResponse of name : string*reponse:string
     let getJsonString name parameters server =
         use client = new HttpClient()
@@ -735,13 +892,41 @@ module Jupyter =
     let sessionGet sessionId server : Session = 
         getJson (sprintf "/api/sessions/%s" sessionId) [] server
 
-    // Rename session
+    /// Rename session
     let sessionRename (newNameSession : Session) sessionId server : Session = 
         patch (sprintf "/api/sessions/%s" sessionId) [] newNameSession server
 
-    // Delete session from id
+    /// Delete session from id
     let sessionDelete sessionId server = 
         delete (sprintf "/api/sessions/%s" sessionId) [] server 
+
+    /// Get contents of file or directory
+    let contents contentType format returnContent path server : Contents = 
+        getJson (sprintf "/api/contents/%s" path) ["type", contentType; "format", format; "content", (if returnContent then "1" else "0")] server
+
+    /// Creates a New untitled, empty file or directory
+    let contentsCreate path copyFrom ext ftype server : Contents = 
+        let body =
+            dict [
+                if copyFrom <> "" then 
+                    yield "copy_from", copyFrom
+                if ext <> "" then
+                    yield "ext", ext
+                if ftype <> "" then
+                    yield "type", ftype
+            ]
+        postJson (sprintf "/api/contents/%s" path) [] body server
+
+    let contentsEmptyNotebook path server : Contents = 
+        if path <> "" then
+            postJson (sprintf "/api/contents/%s" path) [] (dict ["type", "notebook"]) server
+        else
+            postJson "/api/contents" [] (dict ["type", "notebook"]) server
+
+    let shutdown server = postJson "/api/shutdown" [] Map.empty server
+        
+    let messageSessionId sessionId (msg : Message) =
+        {msg with Header = {msg.Header with Session = sessionId}}
 
     type IncomingMessages(agent : MailboxProcessor<ConnectionMessage> ) = 
         interface IObservable<Message> with
